@@ -15,6 +15,7 @@ import torch
 import numpy as np
 from PIL import Image, ImageDraw
 import cv2
+import time
 
 
 
@@ -196,19 +197,31 @@ class grasp_model():
     
     def get_grasps(self, net, end_points):
         # Forward pass
+        print("[FGC DEBUG] get_grasps: entering network forward", flush=True)
+        start_time = time.time()
         with torch.no_grad():
             end_points = net(end_points)
+            print(f"[FGC DEBUG] get_grasps: network forward done in {time.time() - start_time:.2f}s", flush=True)
+            decode_start_time = time.time()
             grasp_preds = pred_decode(end_points)
+            print(f"[FGC DEBUG] get_grasps: pred_decode done in {time.time() - decode_start_time:.2f}s", flush=True)
+        array_start_time = time.time()
         gg_array = grasp_preds[0].detach().cpu().numpy()
+        print(f"[FGC DEBUG] get_grasps: tensor to numpy done in {time.time() - array_start_time:.2f}s", flush=True)
+        group_start_time = time.time()
         gg = GraspGroup(gg_array)
+        print(f"[FGC DEBUG] get_grasps: GraspGroup creation done in {time.time() - group_start_time:.2f}s", flush=True)
         
         return gg_array, gg
 
 
     def collision_detection(self, gg, cloud):
+        print("[FGC DEBUG] collision_detection: starting", flush=True)
+        start_time = time.time()
         mfcdetector = ModelFreeCollisionDetector(cloud, voxel_size=self.args.voxel_size)
         collision_mask = mfcdetector.detect(gg, approach_dist=0.05, collision_thresh=self.args.collision_thresh)
         gg = gg[~collision_mask]
+        print(f"[FGC DEBUG] collision_detection: done in {time.time() - start_time:.2f}s", flush=True)
         return gg
 
 
@@ -236,28 +249,57 @@ class grasp_model():
         return xyz, rot, dep
     
     def forward(self,end_points,cloud):
+        print("[FGC DEBUG] forward: starting", flush=True)
+        forward_start_time = time.time()
         grasp_net = self.load_grasp_net()
+        print(f"[FGC DEBUG] forward: load_grasp_net done in {time.time() - forward_start_time:.2f}s", flush=True)
         gg_array, gg = self.get_grasps(grasp_net, end_points)
+        print(f"[FGC DEBUG] forward: get_grasps returned {len(gg_array)} grasps", flush=True)
 
+        print("[FGC DEBUG] forward: building first gripper geometries", flush=True)
         grippers = gg.to_open3d_geometry_list()
-        o3d.visualization.draw_geometries([cloud, *grippers])
+        print(f"[FGC DEBUG] forward: built {len(grippers)} first gripper geometries", flush=True)
+        print("[FGC DEBUG] forward: opening first Open3D visualization", flush=True)
+        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "1") == "1":
+            o3d.visualization.draw_geometries([cloud, *grippers])
+            print("[FGC DEBUG] forward: first Open3D visualization returned", flush=True)
+        else:
+            print("[FGC DEBUG] forward: skipping first Open3D visualization", flush=True)
         gg = self.choose_in_mask(gg)
+        print(f"[FGC DEBUG] forward: choose_in_mask returned {gg.translations.shape[0]} grasps", flush=True)
 
+        print("[FGC DEBUG] forward: building masked gripper geometries", flush=True)
         grippers = gg.to_open3d_geometry_list()
-        o3d.visualization.draw_geometries([cloud, *grippers])
+        print(f"[FGC DEBUG] forward: built {len(grippers)} masked gripper geometries", flush=True)
+        print("[FGC DEBUG] forward: opening masked Open3D visualization", flush=True)
+        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "1") == "1":
+            o3d.visualization.draw_geometries([cloud, *grippers])
+            print("[FGC DEBUG] forward: masked Open3D visualization returned", flush=True)
+        else:
+            print("[FGC DEBUG] forward: skipping masked Open3D visualization", flush=True)
 
         gg = self.collision_detection(gg, np.array(cloud.points))
+        print(f"[FGC DEBUG] forward: collision_detection returned {gg.translations.shape[0]} grasps", flush=True)
         
         gg.sort_by_score()
+        print("[FGC DEBUG] forward: sort_by_score done", flush=True)
         
         gg_array = gg.grasp_group_array
         
+        print("[FGC DEBUG] forward: building final gripper geometries", flush=True)
         grippers = gg.to_open3d_geometry_list()
-        o3d.visualization.draw_geometries([cloud, *grippers])
+        print(f"[FGC DEBUG] forward: built {len(grippers)} final gripper geometries", flush=True)
+        print("[FGC DEBUG] forward: opening final Open3D visualization", flush=True)
+        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "1") == "1":
+            o3d.visualization.draw_geometries([cloud, *grippers])
+            print("[FGC DEBUG] forward: final Open3D visualization returned", flush=True)
+        else:
+            print("[FGC DEBUG] forward: skipping final Open3D visualization", flush=True)
         
         Path(self.output_path).mkdir(parents=True, exist_ok=True)
         
         np.save(f'{self.output_path}/gg.npy', gg_array)
         o3d.io.write_point_cloud(f'{self.output_path}/cloud.ply', cloud)
+        print(f"[FGC DEBUG] forward: saved outputs and finished in {time.time() - forward_start_time:.2f}s", flush=True)
         
         return gg,gg_array
