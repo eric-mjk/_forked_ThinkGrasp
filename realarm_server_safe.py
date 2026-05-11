@@ -12,7 +12,7 @@ import base64
 from PIL import Image
 import io
 import argparse
-from engine import grasp_model
+from engine import grasp_model, _save_open3d_vis
 from langsam import langsamutils
 from langsam.langsam_actor import LangSAM
 # from VLP.new_vlp_actor import SegmentAnythingActor
@@ -175,16 +175,17 @@ langsam_actor = LangSAM.options(**actor_options).remote(use_gpu=use_gpu)
 
 def visualize_cropping_box(image, cropping_box):
     if not SHOW_MATPLOTLIB:
-        logging.info("Skipping Matplotlib cropping box window.")
+        logging.info("Skipping Matplotlib cropping box visualization.")
         return
-
-    # Visualize the cropping box on the image
     x1, y1, x2, y2 = cropping_box
-    plt.figure()
+    fig = plt.figure()
     plt.imshow(image)
     plt.gca().add_patch(plt.Rectangle((x1, y1), x2-x1, y2-y1, edgecolor='red', facecolor='none'))
     plt.title("Cropping Box Visualization")
-    plt.show()
+    Path("outputs").mkdir(parents=True, exist_ok=True)
+    fig.savefig("outputs/vis_cropping_box.png")
+    plt.close(fig)
+    logging.info("Saved cropping box visualization → outputs/vis_cropping_box.png")
 
 
 def select_action(bboxes, pos_bboxes, text, actions, evaluate=True):
@@ -481,9 +482,7 @@ def get_grasp_pose():
         grippers = gg.to_open3d_geometry_list()
         chosen_gripper = grippers[action_idx]
         if SHOW_OPEN3D:
-            o3d.visualization.draw_geometries([pcd, chosen_gripper])
-        else:
-            logging.info("Skipping Open3D grasp visualization window.")
+            _save_open3d_vis([pcd, chosen_gripper], "outputs/vis_final_grasp.png")
 
         return jsonify({
                 'xyz': xyz_list,

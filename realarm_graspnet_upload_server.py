@@ -24,6 +24,7 @@ from realarm_server_safe import (
     select_fallback_object,
     utils,
     visualize_cropping_box,
+    _save_open3d_vis,
 )
 from grasp_detetor import Graspnet
 
@@ -174,9 +175,7 @@ def get_grasp_pose_graspnet():
 
         grippers = gg.to_open3d_geometry_list()
         if SHOW_OPEN3D and grippers:
-            o3d.visualization.draw_geometries([pcd, grippers[0]])
-        else:
-            logging.info("Skipping Open3D grasp visualization window.")
+            _save_open3d_vis([pcd, grippers[0]], "outputs/graspnet/vis_final_grasp.png")
 
         return jsonify(
             {

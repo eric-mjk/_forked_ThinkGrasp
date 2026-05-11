@@ -18,6 +18,27 @@ import cv2
 import time
 
 
+def _save_open3d_vis(geometries, filepath):
+    try:
+        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        renderer = o3d.visualization.rendering.OffscreenRenderer(1280, 720)
+        mat = o3d.visualization.rendering.MaterialRecord()
+        mat.shader = "defaultUnlit"
+        renderer.scene.set_background(np.array([0.15, 0.15, 0.15, 1.0]))
+        for i, geom in enumerate(geometries):
+            renderer.scene.add_geometry(f"geom_{i}", geom, mat)
+        bounds = renderer.scene.bounding_box
+        center = np.array(bounds.get_center())
+        extent = bounds.get_max_extent()
+        eye = center + np.array([0, -extent * 0.6, extent * 0.8])
+        renderer.setup_camera(60.0, center, eye, [0, 0, 1])
+        img = renderer.render_to_image()
+        o3d.io.write_image(str(filepath), img)
+        print(f"[Open3D] saved visualization → {filepath}", flush=True)
+    except Exception as e:
+        print(f"[Open3D] failed to save visualization: {e}", flush=True)
+
+
 
 
 class grasp_model():
@@ -119,7 +140,7 @@ class grasp_model():
         return processed_masks
     def choose_in_mask(self, gg):
         camera = CameraInfo(
-            width=640, height=480, fx=383.9592, fy=383.6245, cx=322.1625, cy=245.3161, scale=1000.0
+            width=640, height=480, fx=453.2310180664062, fy=604.4352213541667, cx=322.8829956054688, cy=250.18155924479167, scale=4000.0
         )
         gg_new = GraspGroup()
         self.mask = self.process_masks(self.mask)
@@ -131,7 +152,7 @@ class grasp_model():
             translation = grasp.translation
             if translation[-1] != 0:
                 xmap, ymap = self.pc_to_depth(translation, camera)
-                
+
                 if self.mask[ymap, xmap]:
                     gg_new.add(grasp)
         return gg_new
@@ -146,8 +167,8 @@ class grasp_model():
         '''we use the intrinsic of the Realsense D435i camera in our experiments,
             you can change the intrinsic by yourself.
         '''
-        camera=  CameraInfo(
-            width=640, height=480, fx=383.9592, fy=383.6245, cx=322.1625, cy=245.3161, scale=1000.0
+        camera = CameraInfo(
+            width=640, height=480, fx=453.2310180664062, fy=604.4352213541667, cx=322.8829956054688, cy=250.18155924479167, scale=4000.0
         )
 
         cloud = create_point_cloud_from_depth_image(depth, camera, organized=True)
@@ -227,7 +248,7 @@ class grasp_model():
 
     def vis_grasps(self, gg, cloud):
         grippers = gg.to_open3d_geometry_list()
-        o3d.visualization.draw_geometries([cloud, *grippers])
+        _save_open3d_vis([cloud, *grippers], "outputs/vis_grasps.png")
         return gg
 
 
@@ -251,6 +272,7 @@ class grasp_model():
     def forward(self,end_points,cloud):
         print("[FGC DEBUG] forward: starting", flush=True)
         forward_start_time = time.time()
+        Path(self.output_path).mkdir(parents=True, exist_ok=True)
         grasp_net = self.load_grasp_net()
         print(f"[FGC DEBUG] forward: load_grasp_net done in {time.time() - forward_start_time:.2f}s", flush=True)
         gg_array, gg = self.get_grasps(grasp_net, end_points)
@@ -259,24 +281,16 @@ class grasp_model():
         print("[FGC DEBUG] forward: building first gripper geometries", flush=True)
         grippers = gg.to_open3d_geometry_list()
         print(f"[FGC DEBUG] forward: built {len(grippers)} first gripper geometries", flush=True)
-        print("[FGC DEBUG] forward: opening first Open3D visualization", flush=True)
-        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "1") == "1":
-            o3d.visualization.draw_geometries([cloud, *grippers])
-            print("[FGC DEBUG] forward: first Open3D visualization returned", flush=True)
-        else:
-            print("[FGC DEBUG] forward: skipping first Open3D visualization", flush=True)
+        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "0") == "1":
+            _save_open3d_vis([cloud, *grippers], f"{self.output_path}/vis_grasps_all.png")
         gg = self.choose_in_mask(gg)
         print(f"[FGC DEBUG] forward: choose_in_mask returned {gg.translations.shape[0]} grasps", flush=True)
 
         print("[FGC DEBUG] forward: building masked gripper geometries", flush=True)
         grippers = gg.to_open3d_geometry_list()
         print(f"[FGC DEBUG] forward: built {len(grippers)} masked gripper geometries", flush=True)
-        print("[FGC DEBUG] forward: opening masked Open3D visualization", flush=True)
-        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "1") == "1":
-            o3d.visualization.draw_geometries([cloud, *grippers])
-            print("[FGC DEBUG] forward: masked Open3D visualization returned", flush=True)
-        else:
-            print("[FGC DEBUG] forward: skipping masked Open3D visualization", flush=True)
+        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "0") == "1":
+            _save_open3d_vis([cloud, *grippers], f"{self.output_path}/vis_grasps_masked.png")
 
         gg = self.collision_detection(gg, np.array(cloud.points))
         print(f"[FGC DEBUG] forward: collision_detection returned {gg.translations.shape[0]} grasps", flush=True)
@@ -289,14 +303,8 @@ class grasp_model():
         print("[FGC DEBUG] forward: building final gripper geometries", flush=True)
         grippers = gg.to_open3d_geometry_list()
         print(f"[FGC DEBUG] forward: built {len(grippers)} final gripper geometries", flush=True)
-        print("[FGC DEBUG] forward: opening final Open3D visualization", flush=True)
-        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "1") == "1":
-            o3d.visualization.draw_geometries([cloud, *grippers])
-            print("[FGC DEBUG] forward: final Open3D visualization returned", flush=True)
-        else:
-            print("[FGC DEBUG] forward: skipping final Open3D visualization", flush=True)
-        
-        Path(self.output_path).mkdir(parents=True, exist_ok=True)
+        if os.environ.get("THINKGRASP_SHOW_OPEN3D", "0") == "1":
+            _save_open3d_vis([cloud, *grippers], f"{self.output_path}/vis_grasps_final.png")
         
         np.save(f'{self.output_path}/gg.npy', gg_array)
         o3d.io.write_point_cloud(f'{self.output_path}/cloud.ply', cloud)
