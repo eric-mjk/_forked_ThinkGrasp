@@ -733,8 +733,16 @@ def angle2rotm(angle, axis, point=None):
 
 def get_and_process_data(cropping_box,color, depth):
     color = np.array(Image.fromarray(color), dtype=np.float32) / 255.0
+    # Intrinsics scaled from the calibrated 1280x720 camera matrix to the
+    # 640x480 images sent by the ROS ThinkGrasp client.
     camera = CameraInfo(
-        width=640, height=480, fx=382.8567, fy=382.4391, cx=331.3490, cy=247.1126, scale=1000.0
+        width=640,
+        height=480,
+        fx=453.23101806640625,
+        fy=604.4352213541666,
+        cx=322.88299560546875,
+        cy=250.18155924479166,
+        scale=1000.0,
     )
     kernel = 0.2
 
